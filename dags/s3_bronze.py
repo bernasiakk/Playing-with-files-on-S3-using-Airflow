@@ -21,8 +21,8 @@ default_args = {
     'aws_conn_id': 's3_conn'
 }
 
-source_bucketname = 'bernasiakkbucket'
-sink_bucketname = 'sink-bbucket'
+source_bucketname = 'bernasiakkbucket' #TODO
+sink_bucketname = 'sink-bbucket' #TODO
 
 current_date = datetime.now().strftime("%d%m%Y")
 source_filename = f'user_purchase1000_{current_date}.csv'
