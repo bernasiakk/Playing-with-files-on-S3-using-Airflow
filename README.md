@@ -29,7 +29,7 @@ This setup is based on [beginner\_de\_project](https://github.com/josephmachado/
 1.  Clone the repository:
 
     ```bash
-    git clone [https://github.com/bernasiakk/Playing-with-files-on-S3-using-Airflow.git](https://github.com/bernasiakk/Playing-with-files-on-S3-using-Airflow.git)
+    git clone https://github.com/bernasiakk/Playing-with-files-on-S3-using-Airflow.git
     cd Playing-with-files-on-S3-using-Airflow
     ```
 
