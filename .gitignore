@@ -85,6 +85,7 @@ dashboard_files/
 /dags/*
 !/dags/s3_bronze.py
 !/dags/s3_silver.py
+!/dags/s3_gold.py
 
 /data/*
 !/data/user_purchase1000_17032025.csv
