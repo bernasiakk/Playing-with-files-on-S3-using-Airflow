@@ -59,7 +59,8 @@ def upload_to_s3(file_path: str, bucket_name: str, s3_key: str):
     
     for root, dirs, files in os.walk(file_path):
         for file in files:
-            s3.upload_file(os.path.join(root,file),bucket_name,f"{s3_key}/{file}")
+            if file.startswith("part") and file.endswith(".csv"):
+                s3.upload_file(os.path.join(root, file), bucket_name, f"{s3_key}")
 
 # Specify default arguments for Airflow
 default_args = {
@@ -78,7 +79,7 @@ sink_bucketname = 'sink-bbucket'
 current_date = datetime.now().strftime("%d%m%Y")
 filename = f'user_purchase1000_{current_date}.csv'
 sink_filename = f'bronze/{filename}'
-s3_transformed_dir = f'silver/{current_date}'
+s3_transformed_file_path = f'silver/{filename}'
 
 # Define the DAG
 with DAG(
@@ -115,7 +116,7 @@ with DAG(
         op_kwargs={
             'file_path': os.path.join(tempfile.gettempdir(), "transformed"),
             'bucket_name': sink_bucketname,
-            's3_key': s3_transformed_dir
+            's3_key': s3_transformed_file_path
         }
     )
 
