@@ -9,38 +9,17 @@ from airflow.operators.python_operator import PythonOperator
 from airflow.hooks.base_hook import BaseHook
 import boto3
 
-from airflow.sensors.external_task_sensor import ExternalTaskSensor
-
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
+# define variables
+sink_bucketname = 'sink-bbucket'
+current_date = datetime.now().strftime("%d%m%Y")
+filename = f'user_purchase1000_{current_date}.csv'
+sink_filename = f'silver/{filename}'
 
-# def read_parquet_from_s3(s3_path: str):
-#     """
-#     Reads a Parquet file from S3 into a PySpark DataFrame.
-    
-#     :param s3_path: S3 path to the Parquet file (e.g., "s3a://my-bucket/path/to/file.parquet")
-#     :return: PySpark DataFrame
-#     """
-#     # Get AWS credentials from Airflow connection
-#     connection = BaseHook.get_connection('s3_conn')
-#     aws_access_key = connection.login
-#     aws_secret_key = connection.password
-    
-#     # Initialize Spark session with S3 support
-#     spark = SparkSession.builder \
-#         .appName("ReadS3Parquet") \
-#         .config("spark.hadoop.fs.s3.access.key", aws_access_key) \
-#         .config("spark.hadoop.fs.s3.secret.key", aws_secret_key) \
-#         .config("spark.hadoop.fs.s3.path.style.access", "true") \
-#         .getOrCreate()
-    
-#     # Read the Parquet file
-#     df = spark.read.parquet(s3_path)
-    
-#     return df
-
-def download_from_s3(key: str, bucket_name: str, local_path: str, desired_filename: str) -> str:
+# set up functions
+def download_from_s3(key, bucket_name, local_path, desired_filename):
     connection = BaseHook.get_connection('s3_conn')
     
     s3 = boto3.client(
@@ -53,35 +32,7 @@ def download_from_s3(key: str, bucket_name: str, local_path: str, desired_filena
     
     return full_local_path
 
-# def read_file_as_df(input_path: str) -> str:
-#     spark = SparkSession.builder \
-#                     .appName("LocalPySparkTest") \
-#                     .master("local[*]") \
-#                     .getOrCreate()
-    
-#     df = spark.read.parquet(input_path)
-
-#     return df
-
-def transform_file(input_path: str) -> str:
-    # spark = SparkSession.builder \
-    #                 .appName("LocalPySparkTest") \
-    #                 .master("local[*]") \
-    #                 .getOrCreate()
-    
-    # df = spark.read.csv(input_path, header=True, inferSchema=True)
-
-    # df = df.withColumns({
-    #     "total_amount": F.round(df["quantity"]*df["unit_price"], 2),
-    #     "day_of_week": F.dayofweek(df["invoice_date"])
-    # })
-    
-    # temp_dir = tempfile.gettempdir()
-    # output_path = os.path.join(temp_dir, "transformed")
-    
-    # df.write.mode('overwrite').parquet(output_path)
-    from pyspark.sql import functions as F
-    
+def transform_sales(input_path, output_path):
     spark = SparkSession.builder \
                 .appName("LocalPySparkTest") \
                 .master("local[*]") \
@@ -93,7 +44,7 @@ def transform_file(input_path: str) -> str:
 					.option("inferSchema", "true")\
 					.load(input_path)
     
-    df_sales = df.drop(
+    df = df.drop(
         '_c0',
         'invoice_date',
         'country',
@@ -104,22 +55,60 @@ def transform_file(input_path: str) -> str:
             '*'
         )
     
-    df_invoices = df.select(
+    df.coalesce(1)\
+        .write\
+        .mode("overwrite")\
+        .option("header", "true")\
+        .csv(output_path)
+
+def transform_invoices(input_path, output_path):
+    spark = SparkSession.builder \
+                .appName("LocalPySparkTest") \
+                .master("local[*]") \
+                .getOrCreate()
+    
+    df = spark.read\
+					.format("csv")\
+					.option("header","true")\
+					.option("inferSchema", "true")\
+					.load(input_path)
+      
+    df = df.select(
         'invoice_number',
         'invoice_date',
         'day_of_week'
     ).dropDuplicates()
+
+    df.coalesce(1)\
+        .write\
+        .mode("overwrite")\
+        .option("header", "true")\
+        .csv(output_path)
+
+def transform_customers(input_path, output_path):
+    spark = SparkSession.builder \
+                .appName("LocalPySparkTest") \
+                .master("local[*]") \
+                .getOrCreate()
     
-    df_customers = df.select(
+    df = spark.read\
+					.format("csv")\
+					.option("header","true")\
+					.option("inferSchema", "true")\
+					.load(input_path)
+    
+    df = df.select(
         'customer_id',
         'country'
     ).dropDuplicates()
     
-    return df_sales, df_invoices, df_customers
+    df.coalesce(1)\
+        .write\
+        .mode("overwrite")\
+        .option("header", "true")\
+        .csv(output_path)
 
-
-
-def upload_to_s3(file_path: str, bucket_name: str, s3_key: str):
+def upload_to_s3(file_path, bucket_name):
     connection = BaseHook.get_connection('s3_conn')
     s3 = boto3.client(
         's3',
@@ -129,7 +118,7 @@ def upload_to_s3(file_path: str, bucket_name: str, s3_key: str):
     for root, dirs, files in os.walk(file_path):
         for file in files:
             if file.startswith("part") and file.endswith(".csv"):
-                s3.upload_file(os.path.join(root, file), bucket_name, f"{s3_key}")
+                s3.upload_file(os.path.join(root, file), bucket_name, f"gold/{os.path.basename(file_path)}_{current_date}.csv")
 
 # Specify default arguments for Airflow
 default_args = {
@@ -144,13 +133,6 @@ default_args = {
     'aws_conn_id': 's3_conn'
 }
 
-sink_bucketname = 'sink-bbucket'
-current_date = datetime.now().strftime("%d%m%Y")
-filename = f'user_purchase1000_{current_date}.csv'
-sink_filename = f'silver/{filename}'
-s3_transformed_dirs = {
-                       'TODO': 'TODO'}
-
 # Define the DAG
 with DAG(
     dag_id='s3_gold',
@@ -160,14 +142,6 @@ with DAG(
     max_active_runs=1,
     tags=['s3', 'pyspark']
 ) as dag:
-    
-    # task_read_parquet_from_s3 = PythonOperator(
-    #     task_id="read_parquet_from_s3",
-    #     python_callable=read_parquet_from_s3,
-    #     op_kwargs={
-    #         's3_path': 's3://sink-bbucket/silver/17032025/'
-    #     }
-    # )
     
     task_download_from_s3 = PythonOperator(
         task_id="download_from_s3",
@@ -180,33 +154,64 @@ with DAG(
         }
     )
     
-    # task_read_file_as_df = PythonOperator(
-    #     task_id="read_file_as_df",
-    #     python_callable=read_file_as_df,
-    #     op_kwargs={
-    #         'input_path': os.path.join(tempfile.gettempdir(), filename)
-    #     }
-    # )
-    
-    task_transform = PythonOperator(
-        task_id="transform_file",
-        python_callable=transform_file,
+    transform_sales_task = PythonOperator(
+        task_id="transform_sales",
+        python_callable=transform_sales,
         op_kwargs={
-            'input_path': os.path.join(tempfile.gettempdir(), filename)
+            'input_path': os.path.join(tempfile.gettempdir(), filename),
+            'output_path': os.path.join(tempfile.gettempdir(), 'sales')
         }
     )
     
-    upload_task = PythonOperator(
-        task_id="upload_transformed_file",
+    transform_invoices_task = PythonOperator(
+        task_id="transform_invoices",
+        python_callable=transform_invoices,
+        op_kwargs={
+            'input_path': os.path.join(tempfile.gettempdir(), filename),
+            'output_path': os.path.join(tempfile.gettempdir(), 'invoices')
+        }
+    )
+    
+    transform_customers_task = PythonOperator(
+        task_id="transform_customers",
+        python_callable=transform_customers,
+        op_kwargs={
+            'input_path': os.path.join(tempfile.gettempdir(), filename),
+            'output_path': os.path.join(tempfile.gettempdir(), 'customers')
+        }
+    )
+    
+    upload_sales_task = PythonOperator(
+        task_id="upload_sales",
         python_callable=upload_to_s3,
         op_kwargs={
-            'file_path': os.path.join(tempfile.gettempdir(), "transformed"),
+            'file_path': os.path.join(tempfile.gettempdir(), "sales"),
             'bucket_name': sink_bucketname,
-            's3_key': 's3_transformed_dir'
+        }
+    )
+    
+    upload_invoices_task = PythonOperator(
+        task_id="upload_invoices",
+        python_callable=upload_to_s3,
+        op_kwargs={
+            'file_path': os.path.join(tempfile.gettempdir(), "invoices"),
+            'bucket_name': sink_bucketname,
+        }
+    )
+    
+    upload_customers_task = PythonOperator(
+        task_id="upload_customers",
+        python_callable=upload_to_s3,
+        op_kwargs={
+            'file_path': os.path.join(tempfile.gettempdir(), "customers"),
+            'bucket_name': sink_bucketname,
         }
     )
 
-    # wait_for_s3_bronze_DAG >> 
-    # task_read_s3_file >> transform_task >> upload_task
-    # task_read_parquet_from_s3
-    task_download_from_s3 >> task_transform
+
+
+    task_download_from_s3 >> [
+        transform_sales_task >> upload_sales_task,
+        transform_invoices_task >> upload_invoices_task,
+        transform_customers_task >> upload_customers_task
+    ]
