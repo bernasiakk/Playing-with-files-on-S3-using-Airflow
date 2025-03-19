@@ -85,12 +85,6 @@ with DAG(
     max_active_runs=1,
     tags=['s3', 'pyspark']
 ) as dag:
-    
-    wait_for_s3_bronze_DAG = ExternalTaskSensor(
-        task_id='wait_for_other_DAG',
-        external_dag_id='s3_bronze',
-        mode='reschedule',
-    )
         
     task_download_from_s3 = PythonOperator(
         task_id='download_from_s3',
@@ -121,5 +115,4 @@ with DAG(
         }
     )
 
-    # wait_for_s3_bronze_DAG >> 
     task_download_from_s3 >> transform_task >> upload_task
