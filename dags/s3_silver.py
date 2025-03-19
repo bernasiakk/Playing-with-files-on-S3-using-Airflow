@@ -7,9 +7,8 @@ from airflow.utils.dates import days_ago
 
 from airflow.operators.python_operator import PythonOperator
 from airflow.hooks.base_hook import BaseHook
+from airflow.operators.dagrun_operator import TriggerDagRunOperator
 import boto3
-
-from airflow.sensors.external_task_sensor import ExternalTaskSensor
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
@@ -119,5 +118,11 @@ with DAG(
             's3_key': s3_transformed_file_path
         }
     )
+    
+    trigger_s3_gold = TriggerDagRunOperator(
+        task_id='trigger_s3_gold',
+        trigger_dag_id='s3_gold',
+    )
 
-    task_download_from_s3 >> transform_task >> upload_task
+
+    task_download_from_s3 >> transform_task >> upload_task >> trigger_s3_gold
