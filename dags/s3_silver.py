@@ -43,7 +43,11 @@ def transform_file(input_path: str) -> str:
     temp_dir = tempfile.gettempdir()
     output_path = os.path.join(temp_dir, "transformed")
     
-    df.write.mode('overwrite').parquet(output_path)
+    df.coalesce(1)\
+        .write\
+        .mode("overwrite")\
+        .option("header", "true")\
+        .csv(output_path)
 
 
 def upload_to_s3(file_path: str, bucket_name: str, s3_key: str):
